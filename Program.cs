@@ -37,6 +37,14 @@ var jsCode = $$"""
                }), 1e3);
                """;
 
+/* //Для ручной распаковки и обратно
+npm install -g asar
+asar extract app.asar app
+mv app.asar original-app.asar
+
+asar pack app app.asar
+ */
+
 var uglifiedJs = Uglify.Js(
     jsCode,
     new CodeSettings()
