@@ -1,10 +1,8 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
 using System.Text;
-using System.Text.RegularExpressions;
 using craftersmine.Asar.Net;
 using NUglify;
-using NUglify.Css;
 using NUglify.JavaScript;
 
 var cssCode = """
@@ -39,26 +37,42 @@ var jsCode = $$"""
                }), 1e3);
                """;
 
-var uglifiedJs = Uglify.Js(jsCode, new CodeSettings()
-{
-    LocalRenaming = LocalRenaming.KeepAll,
-}).Code;
+var uglifiedJs = Uglify.Js(
+    jsCode,
+    new CodeSettings()
+    {
+        LocalRenaming = LocalRenaming.KeepAll,
+    }).Code;
 
-//TODO: write already completed, if works is done
 //TODO: add recovery button
-var currentDirPath = Directory.GetCurrentDirectory();
 
-var tempDirName = "mattermost_temp"; //"app";
-var tempDirPath = Path.Combine(currentDirPath, tempDirName);
+var oldAppFileName = "app-old.asar";
+var appFileName = "app.asar";
 
-if (!TryFindMattermostAppFilePath(out var appFilePath))
+if (!TryFindMattermostAppDirectory(out var mattermostDirectory))
 {
-    Console.WriteLine("Mattermost is not found");
+    Console.WriteLine("Не удалось найти приложение Mattermost");
     Thread.Sleep(1000);
     return;
 }
 
-Console.WriteLine($"Mattermost found by path: {appFilePath}");
+if (File.Exists(Path.Combine(mattermostDirectory, oldAppFileName)))
+{
+    Console.WriteLine("Стили Mattermost уже заменены");
+    Thread.Sleep(1000);
+    return;
+}
+
+var appFilePath = Path.Combine(mattermostDirectory, appFileName);
+
+if (!File.Exists(appFilePath))
+{
+    Console.WriteLine("Не удалось найти файл приложения Mattermost");
+    Thread.Sleep(1000);
+    return;
+}
+
+Console.WriteLine($"Mattermost найден по пути: {mattermostDirectory}");
 
 #if !DEBUG
 Console.WriteLine($"Continue: y/n");
@@ -72,123 +86,83 @@ if (answer != "y")
 }
 #endif
 
+var unpackedDirectoryName = "app";
+var unpackedDirectoryPath = Path.Combine(mattermostDirectory, unpackedDirectoryName);
 
-// RemoveTempDir();
-//
-// if (!TryUnpackAppFile(appFilePath, tempDirPath))
-// {
-//     Console.WriteLine("Error on unpacking");
-//     OnReturn();
-//     return;
-// }
+RemoveUnpackedDirectory();
 
-// if (!TryFindInjectingFile(tempDirPath, out var injectingFilePath))
-// {
-//     Console.WriteLine("script file is not found");
-//     OnReturn();
-//     return;
-// }
+if (!TryUnpackAppFile(appFilePath, unpackedDirectoryPath))
+{
+    Console.WriteLine("Не удалось разархивировать приложение");
+    OnReturn();
+    return;
+}
 
+if (!TryFindInjectingFile(unpackedDirectoryPath, out var injectingFilePath))
+{
+    Console.WriteLine("Не удалось найти файл стилей");
+    OnReturn();
+    return;
+}
 
 string fileData;
 
 try
 {
-    // fileData = File.ReadAllText(injectingFilePath, Encoding.UTF8);
-    fileData = File.ReadAllText(appFilePath, Encoding.ASCII);
+    fileData = File.ReadAllText(injectingFilePath, Encoding.UTF8);
 }
 catch (Exception e)
 {
-    Console.WriteLine("Failure on reading code file");
+    Console.WriteLine("Не удалось прочитать файл стилей");
     OnReturn();
     return;
 }
 
-var injectingAfterLineCode = Regex.Match(
-    fileData,
-    @"addEventListener\(""storage"",\w+?\),window.addEventListener\(""load"",\w+?\)");
-// var lineEndIndex = fileData.LastIndexOf(
-//     "}",
-//     StringComparison.InvariantCultureIgnoreCase);
 
-var lineEndIndex = fileData.IndexOf(
+var lineEndIndex = fileData.LastIndexOf(
     "}",
-    injectingAfterLineCode.Index,
     StringComparison.InvariantCultureIgnoreCase);
-    
+
 if (lineEndIndex < 0)
 {
-    Console.WriteLine("Ending line index is not found");
+    Console.WriteLine("Не удалось найти позицию вставки новых стилей");
     OnReturn();
     return;
 }
 
-var insertingString = Encoding.ASCII.GetString(
-    Encoding.Convert(Encoding.UTF8, Encoding.ASCII, Encoding.UTF8.GetBytes(";" + uglifiedJs + ";")));
-var newJsCode = fileData.Insert(lineEndIndex, insertingString);
+var newJsCode = fileData.Insert(lineEndIndex, ";" + uglifiedJs);
 
 try
 {
-    // var uglifiedNewJsCode = Uglify.Js(newJsCode).Code;
-    // File.WriteAllText(injectingFilePath, newJsCode, Encoding.UTF8);
-    File.WriteAllText(appFilePath, newJsCode, Encoding.ASCII);
+    File.WriteAllText(injectingFilePath, newJsCode, Encoding.UTF8);
 }
 catch (Exception e)
 {
-    Console.WriteLine("Failure on updating code file");
+    Console.WriteLine("Не удалось обновить файл приложения");
     OnReturn();
     return;
 }
 
-// if (!TryArchiveDirectory(tempDirPath, currentDirPath, tempDirName))
-// {
-//     Console.WriteLine("Failure on creating new archive");
-//     OnReturn();
-//     return;
-// }
+if (!RenameFileIfExists(appFilePath, oldAppFileName))
+{
+    Console.WriteLine("Не удалось переиноменовать файл приложения");
+    OnReturn();
+    return;
+}
 
-// var updatedMattermostFilePath = Path.Combine(currentDirPath, tempDirName + ".asar");
-//
-// if (!File.Exists(updatedMattermostFilePath))
-// {
-//     Console.WriteLine("Updated mattermost file is not found");
-//     OnReturn();
-//     return;
-// }
-
-
-// if (!ReplaceAppFileWithNew(currentDirPath, appFilePath, updatedMattermostFilePath))
-// {
-//     Console.WriteLine("Failure on replacing the file with the new one");
-//     OnReturn();
-//     return;
-// }
-
-
-//JUST RENAMING
-// if (!RenameAppFile(appFilePath))
-// {
-//     Console.WriteLine("Failure on renaming app file");
-//     OnReturn();
-//     return;
-// }
-
-Console.WriteLine("Completed!");
-Thread.Sleep(5000);
+Console.WriteLine("Стили применены!");
+Console.ReadKey(true);
 return;
 
 void OnReturn()
 {
-    RemoveTempDir(); 
-    Thread.Sleep(1000);
+    RemoveUnpackedDirectory();
+    Console.ReadKey(true);
 }
 
-void RemoveTempDir()
+void RemoveUnpackedDirectory()
 {
-    if (Directory.Exists(tempDirPath))
-    {
-        Directory.Delete(tempDirPath, true);
-    }
+    RemoveDirIfExists(unpackedDirectoryPath);
 }
 
 static void RemoveDirIfExists(string ditPath)
@@ -199,19 +173,19 @@ static void RemoveDirIfExists(string ditPath)
     }
 }
 
-bool TryFindMattermostAppFilePath(out string path)
+bool TryFindMattermostAppDirectory(out string path)
 {
-    var appFileName = "app.asar";
-    var appFilePath = Path.Combine(currentDirPath, "app.asar");
+    var localAppPath =  Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);;
+    var directoryPath = Path.Combine(localAppPath, "Programs", "mattermost-desktop", "resources");
 
-    if (!File.Exists(appFilePath))
+    if (Directory.Exists(directoryPath))
     {
-        path = string.Empty;
-        return false;
+        path = directoryPath;
+        return true;
     }
-
-    path = appFilePath;
-    return true;
+    
+    path = string.Empty;
+    return false;
 }
 
 static bool TryUnpackAppFile(string filePath, string outputDirPath)
@@ -290,7 +264,7 @@ static bool ReplaceAppFileWithNew(string outputDirPath, string replacingFilePath
     }
 }
 
-static bool RenameAppFile(string appFilePath)
+static bool RenameFileIfExists(string appFilePath, string newFileName)
 {
     try
     {
@@ -301,7 +275,7 @@ static bool RenameAppFile(string appFilePath)
         }
 
         var appFile = new FileInfo(appFilePath);
-        var oldFileNameWitDate = Path.Combine(appFile.DirectoryName, $"app_{DateTime.Now:dd-MM-yyyy_HH-mm-sss}.asar");
+        var oldFileNameWitDate = Path.Combine(appFile.DirectoryName, newFileName);
         File.Move(appFilePath, oldFileNameWitDate);
         return true;
     }
