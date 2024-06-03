@@ -153,7 +153,7 @@ catch (Exception e)
 
 if (!RenameFileIfExists(appFilePath, oldAppFileName))
 {
-    Console.WriteLine("Не удалось переиноменовать файл приложения");
+    Console.WriteLine("Не удалось переиноменовать файл приложения.\nВозможно вы не выключили приложение Mattermost.");
     OnReturn();
     return;
 }
